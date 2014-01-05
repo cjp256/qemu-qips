@@ -12,3 +12,5 @@ common-obj-$(CONFIG_SDL) += sdl.o sdl_zoom.o x_keymap.o
 common-obj-$(CONFIG_COCOA) += cocoa.o
 common-obj-$(CONFIG_CURSES) += curses.o
 common-obj-$(CONFIG_VNC) += $(vnc-obj-y)
+
+common-obj-y += qip.o

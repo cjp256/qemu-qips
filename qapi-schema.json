@@ -3017,3 +3017,187 @@
 # Since: 1.3.0
 ##
 { 'command': 'nbd-server-stop' }
+
+##
+# @send-keycode:
+#
+# Send keycode to VM.
+#
+# @keycode: keycode
+# @released: key released
+#
+# Returns: Nothing on success
+#
+# Since: 1.3.0
+##
+{ 'command': 'send-keycode', 'data': {'keycode': 'int', 'released': 'bool'} }
+
+##
+# @MouseButtons:
+#
+# Mouse buttons.
+#
+# @left: left mouse button on/off
+#
+# @middle: middle mouse button on/off
+#
+# @right: right mouse button on/off
+#
+# Since: 1.3.0
+##
+{ 'type': 'MouseButtons',
+  'data': { 'left': 'bool', 'middle': 'bool', 'right': 'bool' } }
+
+##
+# @send-mouse-abs:
+#
+# Send relative mouse coordinates.
+#
+# @x: absolute x coord
+# @y: absolute y coord
+# @z: absolute z coord
+# @buttons: mouse button state
+#
+# Returns: Nothing on success
+#
+# Since: 1.3.0
+##
+{ 'command': 'send-mouse-abs',
+  'data': {'x': 'int', 'y': 'int', 'z': 'int', 'buttons': 'MouseButtons'} }
+
+##
+# @send-mouse-rel:
+#
+# Send relative mouse coordinates.
+#
+# @dx: delta x
+# @dy: delta y
+# @dz: delta z
+# @buttons: mouse button state
+#
+# Returns: Nothing on success
+#
+# Since: 1.3.0
+##
+{ 'command': 'send-mouse-rel',
+  'data': {'dx': 'int', 'dy': 'int', 'dz': 'int', 'buttons': 'MouseButtons'} }
+
+##
+# @send-display-size:
+#
+# Send relative mouse coordinates.
+#
+# @x: width
+# @y: height
+#
+# Returns: Nothing on success
+#
+# Since: 1.3.0
+##
+{ 'command': 'send-display-size',
+  'data': {'x': 'int', 'y': 'int'} }
+
+##
+# @send-mouse-scale:
+#
+# Send scaler for qips mouse input.
+#
+# @x: width multiplier
+# @y: height multiplier
+#
+# Returns: Nothing on success
+#
+# Since: 1.3.0
+##
+{ 'command': 'send-mouse-scale',
+  'data': {'x': 'number', 'y': 'number'} }
+
+##
+# @send-kbd-reset:
+#
+# Reset all downed keys up.
+#
+# Returns: Nothing on success
+#
+# Since: 1.3.0
+##
+{ 'command': 'send-kbd-reset' }
+
+##
+# @KbdLedStatus:
+#
+# Information describing a machine.
+#
+# @caps: caps lock on/off
+#
+# @scroll: scroll lock on/off
+#
+# @num: num lock on/off
+#
+# Since: 1.3.0
+##
+{ 'type': 'KbdLedStatus',
+  'data': { 'caps': 'bool', 'scroll': 'bool', 'num': 'bool' } }
+
+##
+# @query-kbd-leds:
+#
+# Query LED state.
+#
+# Returns: KbdLedStatus
+#
+# Since: 1.3.0
+##
+{ 'command': 'query-kbd-leds', 'returns': 'KbdLedStatus' }
+
+##
+# @MouseStatus:
+#
+# Information describing the mouse.
+#
+# @absolute: absolute positioning on/off
+#
+# @x: x coord if absolute
+#
+# @y: y coord if absolute
+#
+# Since: 1.3.0
+##
+{ 'type': 'MouseStatus',
+  'data': { 'absolute': 'bool', 'x': 'int', 'y': 'int' } }
+
+##
+# @query-mouse-status:
+#
+# Query if mouse mode is absolute positioning.
+#
+# Returns: absolute mode boolean
+#
+# Since: 1.3.0
+##
+{ 'command': 'query-mouse-status', 'returns': 'MouseStatus' }
+
+##
+# @XenStatus:
+#
+# Xen bits
+#
+# @xen: xen domain true/off
+#
+# @domain: xen domain id
+#
+# Since: 1.3.0
+##
+{ 'type': 'XenStatus',
+  'data': { 'xen': 'bool', 'domain': 'int' } }
+
+##
+# @query-xen-status:
+#
+# Query xen related state.
+#
+# Returns: int
+#
+# Since: 1.3.0
+##
+{ 'command': 'query-xen-status', 'returns': 'XenStatus' }

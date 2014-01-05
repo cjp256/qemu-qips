@@ -195,6 +195,8 @@ qemu-img$(EXESUF): qemu-img.o $(tools-obj-y) $(block-obj-y) libqemustub.a
 qemu-nbd$(EXESUF): qemu-nbd.o $(tools-obj-y) $(block-obj-y) libqemustub.a
 qemu-io$(EXESUF): qemu-io.o cmd.o $(tools-obj-y) $(block-obj-y) libqemustub.a
 
+qips/qips$(EXESUF): $(qips-obj-y) json-streamer.o json-parser.o json-lexer.o error.o qlist.o qjson.o qint.o qstring.o qbool.o qfloat.o qdict.o ui/x_keymap.o qemu-thread-posix.o cutils.o
+
 qemu-bridge-helper$(EXESUF): qemu-bridge-helper.o
 
 vscclient$(EXESUF): $(libcacard-y) $(oslib-obj-y) $(trace-obj-y) libcacard/vscclient.o libqemustub.a

@@ -106,6 +106,8 @@ common-obj-$(CONFIG_SLIRP) += slirp/
 
 common-obj-y += backends/
 
+qips-obj-$(CONFIG_QIPS) += qips/
+
 ######################################################################
 # libseccomp
 ifeq ($(CONFIG_SECCOMP),y)
@@ -250,5 +252,6 @@ nested-vars += \
 	block-obj-y \
 	user-obj-y \
 	common-obj-y \
-	extra-obj-y
+	extra-obj-y \
+	qips-obj-y
 dummy := $(call unnest-vars)

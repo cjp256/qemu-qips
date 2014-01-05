@@ -223,6 +223,7 @@ libiscsi=""
 coroutine=""
 seccomp=""
 glusterfs=""
+qips="yes"
 
 # parse CC options first
 for opt do
@@ -871,6 +872,10 @@ for opt do
   ;;
   --enable-glusterfs) glusterfs="yes"
   ;;
+  --enable-qips) qips="yes"
+  ;;
+  --disable-qips) qips="no"
+  ;;
   *) echo "ERROR: unknown option $opt"; show_help="yes"
   ;;
   esac
@@ -1119,6 +1124,8 @@ echo "  --with-coroutine=BACKEND coroutine backend. Supported options:"
 echo "                           gthread, ucontext, sigaltstack, windows"
 echo "  --enable-glusterfs       enable GlusterFS backend"
 echo "  --disable-glusterfs      disable GlusterFS backend"
+echo "  --enable-qips             enable QIPS support"
+echo "  --disable-qips            enable QIPS support"
 echo ""
 echo "NOTE: The object files are built at the place where configure is launched"
 exit 1
@@ -3250,6 +3257,7 @@ echo "build guest agent $guest_agent"
 echo "seccomp support   $seccomp"
 echo "coroutine backend $coroutine_backend"
 echo "GlusterFS support $glusterfs"
+echo "QIPS support      $qips"
 
 if test "$sdl_too_old" = "yes"; then
 echo "-> Your SDL version is too old - please upgrade to have SDL support"
@@ -3608,6 +3616,15 @@ bsd)
   echo "HOST_USB=stub" >> $config_host_mak
 ;;
 esac
+
+# QIPS support
+if test "$qips" = "yes"; then
+    tools="qips/qips\$(EXESUF) $tools"
+  echo "CONFIG_QIPS=y" >> $config_host_mak
+  echo "CONFIG_QIPS_EVDEV=y" >> $config_host_mak
+else
+  echo "CONFIG_QIPS=n" >> $config_host_mak
+fi
 
 # use default implementation for tracing backend-specific routines
 trace_default=yes

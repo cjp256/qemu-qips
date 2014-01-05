@@ -1,0 +1,2 @@
+qips-obj-y += input-backend.o
+qips-obj-y += evdev.o

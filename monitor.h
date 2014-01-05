@@ -46,6 +46,9 @@ typedef enum MonitorEvent {
     QEVENT_WAKEUP,
     QEVENT_BALLOON_CHANGE,
     QEVENT_SPICE_MIGRATE_COMPLETED,
+    QEVENT_QIP_MOUSE_MODE_UPDATE,
+    QEVENT_QIP_DISPLAY_MODE_UPDATE,
+    QEVENT_QIP_KBD_LEDS_UPDATE,
 
     /* Add to 'monitor_event_names' array in monitor.c when
      * defining new events here */
