@@ -111,19 +111,14 @@ static QemuOptsList qemu_qip_opts = {
 static void qip_qmp_mouse_mode_event(QipState * qss, int abs)
 {
     QObject *mouse_status;
-    QObject *data;
 
     if (!qss) {
         return;
     }
 
     qmp_marshal_input_query_mouse_status(NULL, NULL, &mouse_status);
-    data = qobject_from_jsonf("{'mouse_status': %p}", mouse_status);
 
-    monitor_protocol_event(QEVENT_QIP_MOUSE_MODE_UPDATE, data);
-
-    //qobject_incref(mouse_status);
-    qobject_decref(data);
+    monitor_protocol_event(QEVENT_QIP_MOUSE_MODE_UPDATE, mouse_status);
 }
 
 /* listener to detect changes between absolute/relative mouse */
@@ -142,19 +137,14 @@ static void mouse_mode_notifier(Notifier * notifier, void *opaque)
 static void qip_qmp_kbd_leds_event(QipState * qss)
 {
     QObject *kbd_leds;
-    QObject *data;
 
     if (!qss) {
         return;
     }
 
     qmp_marshal_input_query_kbd_leds(NULL, NULL, &kbd_leds);
-    data = qobject_from_jsonf("{'kbd_leds': %p}", kbd_leds);
 
-    monitor_protocol_event(QEVENT_QIP_KBD_LEDS_UPDATE, data);
-
-    //qobject_incref(kbd_leds);
-    qobject_decref(data);
+    monitor_protocol_event(QEVENT_QIP_KBD_LEDS_UPDATE, kbd_leds);
 }
 
 /* listener for led updates - send updates to server */
