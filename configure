@@ -256,6 +256,7 @@ coroutine_pool=""
 seccomp=""
 glusterfs=""
 glusterfs_discard="no"
+qips="yes"
 virtio_blk_data_plane=""
 gtk=""
 gtkabi="2.0"
@@ -975,6 +976,8 @@ for opt do
   ;;
   --enable-glusterfs) glusterfs="yes"
   ;;
+  --enable-qips) qips="yes"
+  ;;
   --disable-virtio-blk-data-plane) virtio_blk_data_plane="no"
   ;;
   --enable-virtio-blk-data-plane) virtio_blk_data_plane="yes"
@@ -1230,6 +1233,8 @@ echo "  --enable-glusterfs       enable GlusterFS backend"
 echo "  --disable-glusterfs      disable GlusterFS backend"
 echo "  --enable-gcov            enable test coverage analysis with gcov"
 echo "  --gcov=GCOV              use specified gcov [$gcov_tool]"
+echo "  --enable-qips             enable QIPS support"
+echo "  --disable-qips            enable QIPS support"
 echo "  --enable-tpm             enable TPM support"
 echo "  --disable-libssh2        disable ssh block device support"
 echo "  --enable-libssh2         enable ssh block device support"
@@ -3813,6 +3818,7 @@ echo "coroutine backend $coroutine"
 echo "coroutine pool    $coroutine_pool"
 echo "GlusterFS support $glusterfs"
 echo "virtio-blk-data-plane $virtio_blk_data_plane"
+echo "QIPS support      $qips"
 echo "gcov              $gcov_tool"
 echo "gcov enabled      $gcov"
 echo "TPM support       $tpm"
@@ -4232,6 +4238,15 @@ if test "$tpm" = "yes"; then
   if test "$tpm_passthrough" = "yes"; then
     echo "CONFIG_TPM_PASSTHROUGH=y" >> $config_host_mak
   fi
+fi
+
+# QIPS support
+if test "$qips" = "yes"; then
+    tools="qips/qips\$(EXESUF) $tools"
+  echo "CONFIG_QIPS=y" >> $config_host_mak
+  echo "CONFIG_QIPS_EVDEV=y" >> $config_host_mak
+else
+  echo "CONFIG_QIPS=n" >> $config_host_mak
 fi
 
 # use default implementation for tracing backend-specific routines

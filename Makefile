@@ -195,6 +195,8 @@ qemu-img$(EXESUF): qemu-img.o $(block-obj-y) libqemuutil.a libqemustub.a
 qemu-nbd$(EXESUF): qemu-nbd.o $(block-obj-y) libqemuutil.a libqemustub.a
 qemu-io$(EXESUF): qemu-io.o $(block-obj-y) libqemuutil.a libqemustub.a
 
+qips/qips$(EXESUF): $(qips-obj-y) qobject/json-streamer.o qobject/json-parser.o qobject/json-lexer.o util/error.o qobject/qlist.o qobject/qjson.o qobject/qint.o qobject/qstring.o qobject/qbool.o qobject/qfloat.o qobject/qdict.o util/qemu-thread-posix.o util/cutils.o util/unicode.o
+
 qemu-bridge-helper$(EXESUF): qemu-bridge-helper.o
 
 fsdev/virtfs-proxy-helper$(EXESUF): fsdev/virtfs-proxy-helper.o fsdev/virtio-9p-marshal.o libqemuutil.a libqemustub.a

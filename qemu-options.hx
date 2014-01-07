@@ -3123,6 +3123,23 @@ STEXI
 prepend a timestamp to each log message.(default:on)
 ETEXI
 
+DEF("qip", HAS_ARG, QEMU_OPTION_qip,
+    "-qip debug=<nr>\n"
+    "   enable input protocol plugin\n",
+    QEMU_ARCH_ALL)
+STEXI
+@item -qip @var{option}[,@var{option}[,...]]
+@findex -qip
+Enable the input protocol plugin. Valid options are
+
+@table @option
+
+@item debug=<nr>
+Set the debug level.
+
+@end table
+ETEXI
+
 HXCOMM This is the last statement. Insert new options before this line!
 STEXI
 @end table
