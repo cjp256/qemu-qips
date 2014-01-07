@@ -846,26 +846,43 @@ static void *device_thread(void *d)
     int hacked_pkt_count = 0;
 
     while (1) {
-        struct input_event ev;
+        struct input_event ev_data[64];
+        ssize_t bytes_read;
+        int i;
 
-        if (read(device->fd, &ev, sizeof(ev)) < sizeof(ev)) {
+        bytes_read = read(device->fd, &ev_data, sizeof(ev_data));
+
+        if (bytes_read < sizeof(struct input_event)) {
             DPRINTF("failed to read from device!\n");
             evdev_list_remove(device);
             return NULL;
         }
 
-        /* giant stupid hack until switch to udev - basically read()
-           will keep spitting out the same darn packet endlessly */
-        if (memcmp(&last_packet, &ev, sizeof(ev)) == 0) {
-            if (++hacked_pkt_count > 100) {
-                DPRINTF("100 repeated packets - dropping device!\n");
-                evdev_list_remove(device);
-                return NULL;
+        if (bytes_read % sizeof(struct input_event) != 0) {
+            DPRINTF("evdev read not aligned to struct size? dropping...\n");
+            evdev_list_remove(device);
+            return NULL;
+        }
+
+        for (i = 0; i < (bytes_read / sizeof(struct input_event)); i++) {
+            struct input_event *ev = &ev_data[i];
+
+            /* XXX: hack until switch to udev - basically read()
+               will keep spitting out the same packet data endlessly */
+            if (memcmp(&last_packet, ev, sizeof(struct input_event)) == 0) {
+                if (++hacked_pkt_count > 100) {
+                    DPRINTF("100 repeated packets - dropping device!\n");
+                    evdev_list_remove(device);
+                    return NULL;
+                }
+            } else {
+                memcpy(&last_packet, ev, sizeof(struct input_event));
+                hacked_pkt_count = 0;
+                process_event(ev);
             }
-        } else {
-            memcpy(&last_packet, &ev, sizeof(ev));
-            hacked_pkt_count = 0;
-            process_event(&ev);
+
+            /* XXX: optimize to consolidate obsolete/grouped data:
+             *  (e.g. sum relatives, only use last absolute pos, etc.) */
         }
     }
 
