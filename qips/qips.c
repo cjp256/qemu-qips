@@ -64,6 +64,7 @@ typedef struct QipsClient {
     int led_state;
     int msg_recv_count;
     int msg_sent_count;
+    bool mouse_mode_absolute;
      QTAILQ_ENTRY(QipsClient) next;
     pthread_t socket_listener;
     JSONMessageParser inbound_parser;
@@ -513,13 +514,154 @@ static void dump_qobj(int indent_level, QObject * obj)
     DPRINTF("%*s}", indent_level, "-");
 }
 
+/* process mouse mode status */
+static void process_mouse_mode_message(QipsClient * client, QDict * dict)
+{
+    DPRINTF("mouse mode status msg client=%p dict=%p\n", client, dict);
+
+    /* mouse mode absolute */
+    if (qdict_haskey(dict, "absolute")) {
+        QObject *obj;
+        obj = qdict_get(dict, "absolute");
+
+        if (qobject_type(obj) == QTYPE_QBOOL) {
+            int abs = qbool_get_int(qobject_to_qbool(obj));
+            client->mouse_mode_absolute = abs;
+            DPRINTF("set client slot=%d to mouse_mode_absolute=%d",
+                    client->slot_id, client->mouse_mode_absolute);
+        } else {
+            DPRINTF("return msg has absolute type mismatch\n");
+        }
+    }
+
+    /* ignore x/y coords */
+}
+
+/* process keyboard leds status */
+static void process_kbd_leds_status_message(QipsClient * client, QDict * dict)
+{
+    DPRINTF("kbd leds status msg client=%p dict=%p\n", client, dict);
+
+    /* caps lock status */
+    if (qdict_haskey(dict, "caps")) {
+        QObject *obj;
+        obj = qdict_get(dict, "caps");
+
+        if (obj && qobject_type(obj) == QTYPE_QBOOL) {
+            int caps = qbool_get_int(qobject_to_qbool(obj));
+            if (caps) {
+                client->led_state |= QEMU_CAPS_LOCK_LED;
+            } else {
+                client->led_state &= ~QEMU_CAPS_LOCK_LED;
+            }
+            DPRINTF("set client slot=%d to caps=%d (0x%x)",
+                    client->slot_id, caps, client->led_state);
+        } else {
+            DPRINTF("kbd led status msg has caps type mismatch\n");
+        }
+    }
+
+    /* scroll lock status */
+    if (qdict_haskey(dict, "scroll")) {
+        QObject *obj;
+        obj = qdict_get(dict, "scroll");
+
+        if (obj && qobject_type(obj) == QTYPE_QBOOL) {
+            int scroll = qbool_get_int(qobject_to_qbool(obj));
+            if (scroll) {
+                client->led_state |= QEMU_SCROLL_LOCK_LED;
+            } else {
+                client->led_state &= ~QEMU_SCROLL_LOCK_LED;
+            }
+            DPRINTF("set client slot=%d to scroll=%d (0x%x)",
+                    client->slot_id, scroll, client->led_state);
+        } else {
+            DPRINTF("kbd led status msg has scroll type mismatch\n");
+        }
+    }
+
+    /* num lock status */
+    if (qdict_haskey(dict, "num")) {
+        QObject *obj;
+        obj = qdict_get(dict, "num");
+
+        if (obj && qobject_type(obj) == QTYPE_QBOOL) {
+            int num = qbool_get_int(qobject_to_qbool(obj));
+            if (num) {
+                client->led_state |= QEMU_NUM_LOCK_LED;
+            } else {
+                client->led_state &= ~QEMU_NUM_LOCK_LED;
+            }
+            DPRINTF("set client slot=%d to num=%d (0x%x)",
+                    client->slot_id, num, client->led_state);
+        } else {
+            DPRINTF("kbd led status msg has num type mismatch\n");
+        }
+    }
+
+    /* update leds if client is current focus */
+    if (client == state.focused_client) {
+        qips_console_backend_set_ledstate(client->led_state);
+    }
+}
+
+/* process xen status */
+static void process_xen_status_message(QipsClient * client, QDict * dict)
+{
+    DPRINTF("xen status msg client=%p dict=%p\n", client, dict);
+
+    /* xen domain id */
+    if (qdict_haskey(dict, "domain")) {
+        QObject *obj;
+        obj = qdict_get(dict, "domain");
+
+        if (qobject_type(obj) == QTYPE_QINT) {
+            int domain;
+            domain = qint_get_int(qobject_to_qint(obj));
+            client->domain_id = domain;
+            DPRINTF("set client slot=%d to domain=%d",
+                    client->slot_id, client->domain_id);
+        } else {
+            DPRINTF("kbd led status msg has domain type mismatch\n");
+        }
+    }
+}
+
+/* process return messages */
+static void process_return_message(QipsClient * client, QDict * dict)
+{
+    DPRINTF("return msg client=%p dict=%p\n", client, dict);
+
+    /* this is a little tricky since you don't have context available here 
+     * unless we fully synchronize send & recv and/or id & track them.
+     * For now, we process all possible return fields as
+     * they are uniquely named for QIP(S) related messages.
+     */
+    process_xen_status_message(client, dict);
+    process_mouse_mode_message(client, dict);
+    process_kbd_leds_status_message(client, dict);
+}
+
+/* process event message given event name and data dictionary */
+static void process_event_message(QipsClient * client, const char *event,
+                                  QDict * data)
+{
+    if (strcmp(event, "QEVENT_QIP_MOUSE_MODE_UPDATE") == 0) {
+        process_mouse_mode_message(client, data);
+    } else if (strcmp(event, "QEVENT_QIP_DISPLAY_MODE_UPDATE") == 0) {
+        /* TODO: not yet implemented on QIP side */
+    } else if (strcmp(event, "QEVENT_QIP_KBD_LEDS_UPDATE") == 0) {
+        process_kbd_leds_status_message(client, data);
+    }
+}
+
 /* handle incoming json message */
 static void process_json_message(JSONMessageParser * parser, QList * tokens)
 {
     QipsClient *client = container_of(parser, QipsClient, inbound_parser);
-    QObject *obj;
-    QDict *qdict;
-    QDict *rdict;
+    QObject *obj = NULL;
+    QDict *qdict = NULL;
+
     Error *err = NULL;
 
     DPRINTF("processing message...\n");
@@ -535,102 +677,44 @@ static void process_json_message(JSONMessageParser * parser, QList * tokens)
     qdict = qobject_to_qdict(obj);
 
     if (!qdict) {
-        DPRINTF("no qdict\n");
-    } else {
-        DPRINTF("qdict\n");
-        if (qdict_haskey(qdict, "return")) {
-            rdict = qdict_get_qdict(qdict, "return");
-            if (!rdict) {
-                DPRINTF("no rdict\n");
+        DPRINTF("json message is not qdict?? - qdict = %p\n", qdict);
+        return;
+    }
+
+    /* check if return message */
+    if (qdict_haskey(qdict, "return")) {
+        QObject *obj = qdict_get(qdict, "return");
+        DPRINTF("has key return - qdict = %p\n", qdict);
+
+        if (obj) {
+            if (qobject_type(obj) == QTYPE_QDICT) {
+                process_return_message(client, qobject_to_qdict(obj));
+                return;
             } else {
-                DPRINTF("rdict\n");
-                /* HACK XXX: pick out the things we care about */
-                // domain id
-                if (qdict_haskey(rdict, "domain")) {
-                    QObject *obj;
-                    DPRINTF("rdict has domain\n");
-
-                    obj = qdict_get(rdict, "domain");
-
-                    DPRINTF("rdict domain obj = %p (type=%d)\n", obj,
-                            qobject_type(obj));
-                    if (qobject_type(obj) == QTYPE_QINT) {
-                        int domain;
-                        DPRINTF("rdict domain type match\n");
-                        domain = qint_get_int(qobject_to_qint(obj));
-                        client->domain_id = domain;
-                        DPRINTF("set client slot=%d to domain=%d",
-                                client->slot_id, client->domain_id);
-                    } else {
-                        DPRINTF("rdict has domain type mismatch\n");
-                    }
-                }
-                // caps
-                if (qdict_haskey(rdict, "caps")) {
-                    QObject *obj;
-                    obj = qdict_get(rdict, "caps");
-
-                    DPRINTF("rdict has caps\n");
-
-                    if (obj && qobject_type(obj) == QTYPE_QBOOL) {
-                        int caps = qbool_get_int(qobject_to_qbool(obj));
-                        if (caps) {
-                            client->led_state |= QEMU_CAPS_LOCK_LED;
-                        } else {
-                            client->led_state &= ~QEMU_CAPS_LOCK_LED;
-                        }
-                        DPRINTF("set client slot=%d to caps=%d (0x%x)",
-                                client->slot_id, caps, client->led_state);
-                    } else {
-                        DPRINTF("rdict has caps type mismatch\n");
-                    }
-                }
-                // scroll
-                if (qdict_haskey(rdict, "scroll")) {
-                    QObject *obj;
-                    obj = qdict_get(rdict, "scroll");
-
-                    DPRINTF("rdict has scroll\n");
-
-                    if (obj && qobject_type(obj) == QTYPE_QBOOL) {
-                        int scroll = qbool_get_int(qobject_to_qbool(obj));
-                        if (scroll) {
-                            client->led_state |= QEMU_SCROLL_LOCK_LED;
-                        } else {
-                            client->led_state &= ~QEMU_SCROLL_LOCK_LED;
-                        }
-                        DPRINTF("set client slot=%d to scroll=%d (0x%x)",
-                                client->slot_id, scroll, client->led_state);
-                    } else {
-                        DPRINTF("rdict has scroll type mismatch\n");
-                    }
-                }
-                // num
-                if (qdict_haskey(rdict, "num")) {
-                    QObject *obj;
-                    obj = qdict_get(rdict, "num");
-
-                    DPRINTF("rdict has num\n");
-
-                    if (obj && qobject_type(obj) == QTYPE_QBOOL) {
-                        int num = qbool_get_int(qobject_to_qbool(obj));
-                        if (num) {
-                            client->led_state |= QEMU_NUM_LOCK_LED;
-                        } else {
-                            client->led_state &= ~QEMU_NUM_LOCK_LED;
-                        }
-                        DPRINTF("set client slot=%d to num=%d (0x%x)",
-                                client->slot_id, num, client->led_state);
-                    } else {
-                        DPRINTF("rdict has num type mismatch\n");
-                    }
-                }
+                DPRINTF("return type mismatch - type=%d\n", qobject_type(obj));
             }
         }
     }
 
-    /* TODO: responsible for DECREF? */
-    DPRINTF("processed message.\n");
+    /* check if event message */
+    if (qdict_haskey(qdict, "event")) {
+        const char *name = qdict_get_try_str(qdict, "event");
+        DPRINTF("has key event - qdict = %p\n", qdict);
+
+        if (name) {
+            QObject *obj = qdict_get(qdict, "data");
+            DPRINTF("event name = %s - data = %p\n", name, obj);
+
+            if (obj) {
+                if (qobject_type(obj) == QTYPE_QDICT) {
+                    process_event_message(client, name, qobject_to_qdict(obj));
+                    return;
+                } else {
+                    DPRINTF("event type mismatch - type=%d\n", qobject_type(obj));
+                }
+            }
+        }
+    }
 }
 
 /* add a client via its own thread because connect() may require some time */
