@@ -3325,6 +3325,7 @@ EQMP
         .args_type  = "x:i,y:i",
         .mhandler.cmd_new = qmp_marshal_input_send_display_size,
     },
+
     {
         .name       = "send-mouse-scale",
         .args_type  = "x:T,y:T",
