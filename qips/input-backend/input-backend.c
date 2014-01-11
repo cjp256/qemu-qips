@@ -63,24 +63,14 @@ static void qips_input_backend_dump_key_map(void)
 }
 #endif
 
-static void qips_input_backend_key_map(int scancode, int key_status)
+static void qips_input_backend_key_map(int scancode, bool released)
 {
-    switch (key_status) {
-    case 0:
-        INPUT_DPRINTF("KEY_RELEASED (%d)\n", scancode);
+    if (released) {
+        INPUT_DPRINTF("key up = 0x%x\n", scancode);
         key_down_map[scancode & SCANCODE_KEYMASK] = 0;
-        break;
-    case 1:
-        INPUT_DPRINTF("KEY_DEPRESSED (%d)\n", scancode);
+    } else {
+        INPUT_DPRINTF("key down = 0x%x\n", scancode);
         key_down_map[scancode & SCANCODE_KEYMASK] = 1;
-        break;
-    case 2:
-        INPUT_DPRINTF("KEY_REPEAT (%d)\n", scancode);
-        key_down_map[scancode & SCANCODE_KEYMASK] = 1;
-        break;
-    case 3:
-        DPRINTF("KEY_WTF (%d)\n", scancode);
-        return;
     }
 
     /* Check magic keys (left ctrl + left alt + left/right) */
@@ -98,17 +88,18 @@ static void qips_input_backend_key_map(int scancode, int key_status)
 }
 
 void qips_input_backend_key_event(int64_t timestamp_usec,
-                                  int scancode, int key_status)
+                                  int scancode, bool released)
 {
     char buf[1024];
 
     snprintf(buf, sizeof(buf),
-             "{ \"execute\": \"send-keycode\", \"arguments\": { \"keycode\": %d, \"released\": %s } }\r\n",
-             scancode, (key_status == 0) ? "true" : "false");
+             "{ \"execute\": \"send-keycode\","
+             " \"arguments\": { \"keycode\": %d, \"released\": %s } }\r\n",
+             scancode, released ? "true" : "false");
 
     qips_send_focused_client_message(buf, strlen(buf), false);
 
-    qips_input_backend_key_map(scancode, key_status);
+    qips_input_backend_key_map(scancode, released);
 }
 
 void qips_input_backend_abs_mouse_event(int64_t timestamp_usec,
