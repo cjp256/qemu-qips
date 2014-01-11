@@ -43,7 +43,7 @@ bool qips_input_backend_init(void);
 bool qips_input_backend_cleanup(void);
 
 void qips_input_backend_key_event(int64_t timestamp_usec,
-                                  int scancode, int key_status);
+                                  int scancode, bool released);
 
 void qips_input_backend_abs_mouse_event(int64_t timestamp_usec,
                                         int x, int y, int z,

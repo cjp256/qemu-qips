@@ -758,7 +758,7 @@ static void process_event(struct input_event *ev)
             EVDEV_DPRINTF("ev->value: KEY_REPEAT (%d)\n", ev->value);
             break;
         case 3:
-            EVDEV_DPRINTF("ev->value: KEY_WTF (%d)\n", ev->value);
+            EVDEV_DPRINTF("ev->value: KEY_?? (%d)\n", ev->value);
             break;
         }
 
@@ -809,8 +809,13 @@ static void process_event(struct input_event *ev)
             EVDEV_DPRINTF("code=0x%x -> scancode=0x%x\n", ev->code, scancode);
 
             if (scancode) {
-                qips_input_backend_key_event(timestamp_usec(ev->time),
-                                             scancode, ev->value);
+                if (ev->value == 0) {
+                    qips_input_backend_key_event(timestamp_usec(ev->time),
+                                                 scancode, true);
+                } else {
+                    qips_input_backend_key_event(timestamp_usec(ev->time),
+                                                 scancode, false);
+                }
             }
         }
     } else if (ev->type == EV_MSC
