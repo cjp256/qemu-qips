@@ -1,0 +1,4 @@
+qips-obj-y += qips.o
+qips-obj-y += console-frontend/
+qips-obj-y += console-backend/
+qips-obj-y += input-backend/

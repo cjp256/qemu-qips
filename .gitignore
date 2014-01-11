@@ -59,6 +59,7 @@ fsdev/virtfs-proxy-helper
 fsdev/virtfs-proxy-helper.1
 fsdev/virtfs-proxy-helper.pod
 .gdbinit
+qips/qips
 *.a
 *.aux
 *.cp

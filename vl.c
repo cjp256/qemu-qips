@@ -171,6 +171,8 @@ int main(int argc, char **argv)
 #include "ui/qemu-spice.h"
 #include "qapi/string-input-visitor.h"
 
+#include "ui/qip.h"
+
 //#define DEBUG_NET
 //#define DEBUG_SLIRP
 
@@ -3292,6 +3294,18 @@ int main(int argc, char **argv, char **envp)
                         printf("Bad argument to echr\n");
                     break;
                 }
+            case QEMU_OPTION_qip:
+                olist = qemu_find_opts("qip");
+                if (!olist) {
+                    fprintf(stderr, "qip is not supported by this qemu build.\n");
+                    exit(1);
+                }
+                opts = qemu_opts_parse(olist, optarg, 0);
+                if (!opts) {
+                    exit(1);
+                }
+                using_qip = 1;
+                break;
             case QEMU_OPTION_monitor:
                 default_monitor = 0;
                 if (strncmp(optarg, "none", 4)) {
@@ -4332,6 +4346,10 @@ int main(int argc, char **argv, char **envp)
         qemu_spice_display_init();
     }
 #endif
+
+    if (using_qip) {
+        qip_init(ds);
+    }
 
     if (foreach_device_config(DEV_GDB, gdbserver_start) < 0) {
         exit(1);

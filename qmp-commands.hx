@@ -3295,3 +3295,56 @@ Example (2):
 <- { "return": {} }
 
 EQMP
+
+    {
+        .name       = "send-keycode",
+        .args_type  = "keycode:i,released:b",
+        .mhandler.cmd_new = qmp_marshal_input_send_keycode,
+    },
+
+    {
+        .name       = "send-mouse-abs",
+        .args_type  = "x:i,y:i,z:i,buttons:O",
+        .mhandler.cmd_new = qmp_marshal_input_send_mouse_abs,
+    },
+
+    {
+        .name       = "send-mouse-rel",
+        .args_type  = "dx:i,dy:i,dz:i,buttons:O",
+        .mhandler.cmd_new = qmp_marshal_input_send_mouse_rel,
+    },
+
+    {
+        .name       = "send-kbd-reset",
+        .args_type  = "",
+        .mhandler.cmd_new = qmp_marshal_input_send_kbd_reset,
+    },
+
+    {
+        .name       = "send-display-size",
+        .args_type  = "x:i,y:i",
+        .mhandler.cmd_new = qmp_marshal_input_send_display_size,
+    },
+    {
+        .name       = "send-mouse-scale",
+        .args_type  = "x:T,y:T",
+        .mhandler.cmd_new = qmp_marshal_input_send_mouse_scale,
+    },
+
+    {
+        .name       = "query-kbd-leds",
+        .args_type  = "",
+        .mhandler.cmd_new = qmp_marshal_input_query_kbd_leds,
+    },
+
+    {
+        .name       = "query-mouse-status",
+        .args_type  = "",
+        .mhandler.cmd_new = qmp_marshal_input_query_mouse_status,
+    },
+
+    {
+        .name       = "query-xen-status",
+        .args_type  = "",
+        .mhandler.cmd_new = qmp_marshal_input_query_xen_status,
+    },

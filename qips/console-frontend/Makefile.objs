@@ -1,0 +1,2 @@
+qips-obj-y += console-frontend.o
+qips-obj-y += xengt.o

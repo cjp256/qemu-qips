@@ -99,6 +99,11 @@ common-obj-y += qom/
 common-obj-y += disas/
 
 ######################################################################
+# qips
+
+qips-obj-$(CONFIG_QIPS) += qips/
+
+######################################################################
 # Resource file for Windows executables
 version-obj-$(CONFIG_WIN32) += $(BUILD_DIR)/version.o
 version-lobj-$(CONFIG_WIN32) += $(BUILD_DIR)/version.lo
@@ -123,5 +128,6 @@ nested-vars += \
 	qga-obj-y \
 	qga-vss-dll-obj-y \
 	block-obj-y \
-	common-obj-y
+	common-obj-y \
+	qips-obj-y
 dummy := $(call unnest-vars)
