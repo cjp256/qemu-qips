@@ -35,14 +35,17 @@
 #include <sys/un.h>
 #include <pthread.h>
 #include <sys/inotify.h>
+#include <getopt.h>
 
 #include "qemu-common.h"
 #include "input-backend/input-backend.h"
 #include "input-backend/evdev.h"
 #include "console-backend/console-backend.h"
 #include "console-backend/vt.h"
+#include "console-backend/xback.h"
 #include "console-frontend/console-frontend.h"
 #include "console-frontend/xengt.h"
+#include "console-frontend/xfront.h"
 #include "ui/x_keymap.h"
 #include "qips.h"
 #include "qapi/qmp/json-streamer.h"
@@ -55,6 +58,10 @@ int qips_debug_mode = 0;
 #define QIPS_SOCKETS_PATH "/var/run/qips"
 #define QIPS_SOCKETS_FMT "/var/run/qips/slot-%d"
 #define QIPS_SOCKETS_FMT_BASE "slot-"
+
+const char * qips_sockets_path = QIPS_SOCKETS_PATH;
+const char * qips_sockets_fmt = QIPS_SOCKETS_FMT;
+const char * qips_sockets_fmt_base = QIPS_SOCKETS_FMT_BASE;
 
 typedef struct QipsClient {
     char socket_path[PATH_MAX];
@@ -369,7 +376,7 @@ static void terminate(int signum)
     exit(5);
 }
 
-static void setup_signals(void)
+static void setup_signals(bool allow_sigint)
 {
     struct sigaction sa;
 
@@ -378,7 +385,11 @@ static void setup_signals(void)
     sa.sa_flags = SA_RESTART;
     sa.sa_handler = SIG_IGN;
     sigaction(SIGHUP, &sa, 0);
-    sigaction(SIGINT, &sa, 0);
+
+    if (!allow_sigint) {
+        sigaction(SIGINT, &sa, 0);
+    }
+
     sigaction(SIGQUIT, &sa, 0);
     sigaction(SIGPIPE, &sa, 0);
     sigaction(SIGALRM, &sa, 0);
@@ -398,8 +409,8 @@ static void setup_signals(void)
 
 static int is_domain_socket(const struct dirent *dir)
 {
-    return strncmp(QIPS_SOCKETS_FMT_BASE, dir->d_name,
-                   strlen(QIPS_SOCKETS_FMT_BASE)) == 0;
+    return strncmp(qips_sockets_fmt_base, dir->d_name,
+                   strlen(qips_sockets_fmt_base)) == 0;
 }
 
 static void process_json_message(JSONMessageParser * parser, QList * tokens);
@@ -632,7 +643,7 @@ static void process_return_message(QipsClient * client, QDict * dict)
 {
     DPRINTF("return msg client=%p dict=%p\n", client, dict);
 
-    /* this is a little tricky since you don't have context available here 
+    /* this is a little tricky since you don't have context available here
      * unless we fully synchronize send & recv and/or id & track them.
      * For now, we process all possible return fields as
      * they are uniquely named for QIP(S) related messages.
@@ -728,7 +739,7 @@ static void *client_add_thread(void *p)
     struct sockaddr_un serv_addr;
     QipsClient *new_client = NULL;
 
-    sscanf(path, QIPS_SOCKETS_FMT, &slot_id);
+    sscanf(path, qips_sockets_fmt, &slot_id);
 
     DPRINTF("path=%s slot=%d\n", path, slot_id);
 
@@ -810,7 +821,7 @@ static void client_notify(QipsState * s)
     }
 
     /* add watch for /var/run/qemu-iss */
-    wd = inotify_add_watch(fd, QIPS_SOCKETS_PATH, IN_CREATE | IN_DELETE);
+    wd = inotify_add_watch(fd, qips_sockets_path, IN_CREATE | IN_DELETE);
 
     while (1) {
         /* need to get multiple events at a time or risk losing them */
@@ -843,8 +854,8 @@ static void client_notify(QipsState * s)
             }
 
             /* determine full path */
-            snprintf(full_path, sizeof(full_path), QIPS_SOCKETS_PATH "/%s",
-                     event->name);
+            snprintf(full_path, sizeof(full_path), "%s/%s",
+                     qips_sockets_path, event->name);
 
             DPRINTF("event name=%s mask=0x%x\n", event->name, event->mask);
 
@@ -882,7 +893,7 @@ static void client_scan(QipsState * s)
     struct dirent **namelist;
     int i, ndev;
 
-    ndev = scandir(QIPS_SOCKETS_PATH, &namelist, is_domain_socket, alphasort);
+    ndev = scandir(qips_sockets_path, &namelist, is_domain_socket, alphasort);
 
     if (ndev <= 0) {
         return;
@@ -893,7 +904,7 @@ static void client_scan(QipsState * s)
     for (i = 0; i < ndev; i++) {
         pthread_t thread_id;
         char *path = g_malloc0(PATH_MAX);
-        snprintf(path, PATH_MAX, "%s/%s", QIPS_SOCKETS_PATH,
+        snprintf(path, PATH_MAX, "%s/%s", qips_sockets_path,
                  namelist[i]->d_name);
 
         pthread_create(&thread_id, NULL, client_add_thread, path);
@@ -902,37 +913,187 @@ static void client_scan(QipsState * s)
     }
 }
 
+static void usage(const char *prog)
+{
+    fprintf(stderr, "[USAGE]\n %s [-dEID] " \
+                    "--console-backend [vt|xback] " \
+                    "--console-frontend [xengt|xfront] " \
+                    "--input-backend [evdev|xinput] " \
+                    "[--qmp-dir path]\n\n", prog);
+
+    fprintf(stderr, "[OPTIONS]\n");
+    fprintf(stderr, "  [-h|--help]          -- help\n");
+    fprintf(stderr, "  [-d|--daemonize]     -- dameonize\n");
+    fprintf(stderr, "  [-E|--debug-evdev]   -- dump evdev debug info\n");
+    fprintf(stderr, "  [-I|--debug-input]   -- dump input debug info\n");
+    fprintf(stderr, "  [-D|--debug]         -- dump basic debug info\n");
+    fprintf(stderr, "  [-b|--console-backend]  -- specify console backend\n");
+    fprintf(stderr, "  [-f|--console-frontend] -- specify console frontend\n");
+    fprintf(stderr, "  [-i|--input-backend] -- specify input backend\n");
+    fprintf(stderr, "  [-q|--qmp-dir]       -- specify qmp socket directory\n");
+}
+
+static void daemonize(void)
+{
+    /* TODO: move from vt.c backend? */
+}
+
+static void set_qmp_dir(const char *qmp_dir)
+{
+    /* qmp_dir/fmt_base%d + null */
+    ssize_t fmt_len = strlen(qmp_dir) + 1 + strlen(QIPS_SOCKETS_FMT_BASE) + 3;
+    char *fmt = g_malloc0(fmt_len);
+
+    qips_sockets_path = qmp_dir;
+
+    DPRINTF("set qips_sockets_path=%s\n", qips_sockets_path);
+
+    qips_sockets_fmt_base = QIPS_SOCKETS_FMT_BASE;
+
+    DPRINTF("set qips_sockets_fmt_base=%s\n", qips_sockets_fmt_base);
+
+    snprintf(fmt, fmt_len, "%s/%s%%d",
+             qmp_dir, qips_sockets_fmt_base);
+
+    qips_sockets_fmt = fmt;
+
+    DPRINTF("set qips_sockets_fmt=%s\n", qips_sockets_fmt);
+}
+
 int main(int argc, char *argv[])
 {
-    int i;
+    const char *sopt = "hcdEIDb:f:i:q:";
+    const char *console_backend = NULL;
+    const char *console_frontend = NULL;
+    const char *input_backend = NULL;
+    const char *qmp_dir = NULL;
+    const struct option lopt[] = {
+        { "help", 0, NULL, 'h' },
+        { "daemonize", 0, NULL, 'd' },
+        { "debug-evdev", 0, NULL, 'E' },
+        { "debug-input", 0, NULL, 'I' },
+        { "debug", 0, NULL, 'D' },
+        { "console-backend", 1, NULL, 'b' },
+        { "console-frontend", 1, NULL, 'f' },
+        { "input-backend", 1, NULL, 'i' },
+        { "qmp-dir", 1, NULL, 'q' },
+        { NULL, 0, NULL, 0 }
+    };
+
+    int opt_ind = 0;
+    char ch;
+    bool allow_sigint = true;
+    bool do_daemonize = false;
+
     QipsClient *dom0;
 
 #ifdef DO_LOG_SYSLOG
     openlog("qips", LOG_CONS | LOG_PID, LOG_USER);
 #endif
 
-    DPRINTF("main entry...\n");
-
-    for (i = 1; i < argc && argv[i]; i++) {
-        if (strcmp(argv[i], "debug-evdev") == 0) {
-            DPRINTF("evdev_debug_mode = 1\n");
-            evdev_debug_mode = 1;
-        }
-        if (strcmp(argv[i], "debug-input") == 0) {
-            DPRINTF("input_backend_debug_mode = 1\n");
-            input_backend_debug_mode = 1;
-        }
-        if (strcmp(argv[i], "debug-qips") == 0) {
-            DPRINTF("qips_debug_mode = 1\n");
-            qips_debug_mode = 1;
+    while ((ch = getopt_long(argc, argv, sopt, lopt, &opt_ind)) != -1) {
+        switch (ch) {
+            case 'E':
+                evdev_debug_mode = 1;
+                break;
+            case 'I':
+                input_backend_debug_mode = 1;
+                break;
+            case 'D':
+                qips_debug_mode = 1;
+                break;
+            case 'b':
+                console_backend = optarg;
+                break;
+            case 'c':
+                allow_sigint = true;
+                break;
+            case 'f':
+                console_frontend = optarg;
+                break;
+            case 'i':
+                input_backend = optarg;
+                break;
+            case 'd':
+                do_daemonize = 1;
+                break;
+            case 'q':
+                qmp_dir = optarg;
+                break;
+            case 'h':
+                usage(argv[0]);
+                return 0;
+            case '?':
+                g_print("Unknown option, try '%s --help' for more information.\n",
+                        argv[0]);
+                return EXIT_FAILURE;
         }
     }
 
-    state.console_frontend = xengt_console_frontend_register();
-    state.console_backend = vt_console_backend_register();
-    state.input_backend = evdev_input_backend_register();
+    /* no console frontend chosen - error out */
+    if (console_frontend == NULL) {
+        fprintf(stderr, "error: must specify valid console-frontend!\n");
+        return 1;
+    }
 
-    setup_signals();
+    /* figure out which console frontend to use */
+    if (strcmp(console_frontend, "xengt") == 0) {
+        state.console_frontend = xengt_console_frontend_register();
+    } else if (strcmp(console_frontend, "xfront") == 0) {
+        state.console_frontend = xfront_console_frontend_register();
+    }
+
+    /* no console frontend chosen - error out */
+    if (state.console_frontend == NULL) {
+        fprintf(stderr, "error: must specify valid console-frontend!\n");
+        return 1;
+    }
+
+    /* no console backend chosen - error out */
+    if (console_backend == NULL) {
+        fprintf(stderr, "error: must specify valid console-backend!\n");
+        return 1;
+    }
+
+    /* figure out which console backend to use */
+    if (strcmp(console_backend, "vt") == 0) {
+        state.console_backend = vt_console_backend_register();
+    } if (strcmp(console_backend, "xback") == 0) {
+        state.console_backend = xback_console_backend_register();
+    }
+
+    /* no console backend chosen - error out */
+    if (state.console_backend == NULL) {
+        fprintf(stderr, "error: must specify valid console-backend!\n");
+        return 1;
+    }
+
+    /* no input backend chosen - error out */
+    if (input_backend == NULL) {
+        fprintf(stderr, "error: must specify valid console-backend!\n");
+        return 1;
+    }
+
+    /* figure out which input backend to use */
+    if (strcmp(input_backend, "evdev") == 0) {
+        state.input_backend = evdev_input_backend_register();
+    }
+
+    /* no input backend chosen - error out */
+    if (state.input_backend == NULL) {
+        fprintf(stderr, "error: must specify valid console-backend!\n");
+        return 1;
+    }
+
+    if (qmp_dir) {
+        set_qmp_dir(qmp_dir);
+    }
+
+    if (do_daemonize) {
+        daemonize();
+    }
+
+    setup_signals(allow_sigint);
 
     client_list_mutex_init(&state);
 
