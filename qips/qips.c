@@ -1058,7 +1058,7 @@ int main(int argc, char *argv[])
     /* figure out which console backend to use */
     if (strcmp(console_backend, "vt") == 0) {
         state.console_backend = vt_console_backend_register();
-    } if (strcmp(console_backend, "xback") == 0) {
+    } else if (strcmp(console_backend, "xback") == 0) {
         state.console_backend = xback_console_backend_register();
     }
 
