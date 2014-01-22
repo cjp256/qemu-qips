@@ -1,2 +1,3 @@
 qips-obj-y += console-frontend.o
 qips-obj-y += xengt.o
+qips-obj-y += xfront.o
