@@ -26,11 +26,16 @@ static bool xengt_init(void)
     return true;
 }
 
-static bool xengt_switch(int domain)
+static bool xengt_prep_switch(bool leaving_control)
+{
+    return true;
+}
+
+static bool xengt_switch(int domain, pid_t pid, int slot)
 {
     char cmd[4096];
 
-    DPRINTF("switch to domain=%d!\n", domain);
+    DPRINTF("switch to domain=%d pid=%ld!\n", domain, (long)pid);
 
     /* TODO: I'm sure we can do better than this... */
     snprintf(cmd, sizeof(cmd),
@@ -51,6 +56,7 @@ static bool xengt_cleanup(void)
 
 static const QipsConsoleFrontend xengt = {
     .init = xengt_init,
+    .prep_switch = xengt_prep_switch,
     .domain_switch = xengt_switch,
     .cleanup = xengt_cleanup,
 };

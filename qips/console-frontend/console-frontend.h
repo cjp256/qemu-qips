@@ -22,11 +22,14 @@
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include "qips/qips.h"
 
 typedef struct {
     bool(*init) (void);
-    bool(*domain_switch) (int);
+    bool(*prep_switch) (bool);
+    bool(*domain_switch) (int, pid_t, int);
     bool(*cleanup) (void);
 } QipsConsoleFrontend;
 
@@ -34,7 +37,9 @@ void qips_console_frontend_register(const QipsConsoleFrontend * frontend);
 
 bool qips_console_frontend_init(void);
 
-bool qips_console_frontend_domain_switch(int domain);
+bool qips_console_frontend_prep_switch(bool leaving_control);
+
+bool qips_console_frontend_domain_switch(int domain, pid_t pid, int slot);
 
 bool qips_console_frontend_cleanup(void);
 

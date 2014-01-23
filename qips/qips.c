@@ -65,6 +65,7 @@ const char * qips_sockets_fmt_base = QIPS_SOCKETS_FMT_BASE;
 
 typedef struct QipsClient {
     char socket_path[PATH_MAX];
+    pid_t process_id;
     int socket_fd;
     int domain_id;
     int slot_id;
@@ -120,13 +121,19 @@ static void switch_focused_client(QipsState * s, QipsClient * new_focus,
 
     /* lock console backend if switching from domain-0 */
     if (s->focused_client->domain_id == 0) {
+        s->console_frontend->prep_switch(true);
         s->console_backend->lock();
+    } else {
+        s->console_frontend->prep_switch(false);
     }
 
     s->focused_client = new_focus;
 
     /* update console frontend */
-    s->console_frontend->domain_switch(new_focus->domain_id);
+    DPRINTF("domain_switch\n");
+    s->console_frontend->domain_switch(new_focus->domain_id,
+                                       new_focus->process_id,
+                                       new_focus->slot_id);
 
     /* release lock on console backend if switching to domain-0 */
     if (new_focus->domain_id == 0) {
@@ -256,7 +263,7 @@ static void qips_cleanup(QipsState * s)
     }
 
     /* switch back to dom0 */
-    s->console_frontend->domain_switch(0);
+    s->console_frontend->domain_switch(0, 0, 0);
 
     /* release lock on dom0 */
     s->console_backend->release();
@@ -337,6 +344,16 @@ static void qips_send_xen_query(QipsState * s, QipsClient * client)
     char query[] = "{ \"execute\": \"query-xen-status\" }";
 
     DPRINTF("sending xen query to client slot=%d domain=%d (fd=%d)\n",
+            client->slot_id, client->domain_id, client->socket_fd);
+
+    qips_send_message(s, client, query, strlen(query), false);
+}
+
+static void qips_send_process_info_query(QipsState * s, QipsClient * client)
+{
+    char query[] = "{ \"execute\": \"query-process-info\" }";
+
+    DPRINTF("sending process info query to client slot=%d domain=%d (fd=%d)\n",
             client->slot_id, client->domain_id, client->socket_fd);
 
     qips_send_message(s, client, query, strlen(query), false);
@@ -633,7 +650,29 @@ static void process_xen_status_message(QipsClient * client, QDict * dict)
             DPRINTF("set client slot=%d to domain=%d",
                     client->slot_id, client->domain_id);
         } else {
-            DPRINTF("kbd led status msg has domain type mismatch\n");
+            DPRINTF("xen status msg has domain type mismatch\n");
+        }
+    }
+}
+
+/* process process info */
+static void process_proces_info_message(QipsClient * client, QDict * dict)
+{
+    DPRINTF("process info msg client=%p dict=%p\n", client, dict);
+
+    /* process id */
+    if (qdict_haskey(dict, "pid")) {
+        QObject *obj;
+        obj = qdict_get(dict, "pid");
+
+        if (qobject_type(obj) == QTYPE_QINT) {
+            pid_t pid;
+            pid = qint_get_int(qobject_to_qint(obj));
+            client->process_id = pid;
+            DPRINTF("set client slot=%d pid=%ld",
+                    client->slot_id, (long)client->process_id);
+        } else {
+            DPRINTF("process info msg has pid type mismatch\n");
         }
     }
 }
@@ -651,6 +690,7 @@ static void process_return_message(QipsClient * client, QDict * dict)
     process_xen_status_message(client, dict);
     process_mouse_mode_message(client, dict);
     process_kbd_leds_status_message(client, dict);
+    process_proces_info_message(client, dict);
 }
 
 /* process event message given event name and data dictionary */
@@ -800,6 +840,8 @@ static void *client_add_thread(void *p)
     sleep(1);
 
     qips_send_xen_query(s, new_client);
+
+    qips_send_process_info_query(s, new_client);
 
     qips_request_kbd_leds(s, new_client);
 

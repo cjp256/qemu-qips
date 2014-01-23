@@ -191,6 +191,7 @@ static bool xback_release(void)
     }
 
     g_free(locks);
+
     XCloseDisplay(dpy);
     dpy = NULL;
 

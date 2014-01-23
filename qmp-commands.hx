@@ -3086,6 +3086,11 @@ EQMP
         .args_type  = "",
         .mhandler.cmd_new = qmp_marshal_input_query_xen_status,
     },
+    {
+        .name       = "query-process-info",
+        .args_type  = "",
+        .mhandler.cmd_new = qmp_marshal_input_query_process_info,
+    },
 
 SQMP
 query-tpm

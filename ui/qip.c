@@ -373,6 +373,18 @@ XenStatus *qmp_query_xen_status(Error ** errp)
     return xen_status;
 }
 
+/* process incoming query for process info */
+ProcessInfo *qmp_query_process_info(Error ** errp)
+{
+    ProcessInfo *p_info;
+
+    p_info = g_malloc0(sizeof(*p_info));
+
+    p_info->pid = (int64_t) getpid();
+
+    return p_info;
+}
+
 /* process incoming query for keyboard led status */
 KbdLedStatus *qmp_query_kbd_leds(Error ** errp)
 {

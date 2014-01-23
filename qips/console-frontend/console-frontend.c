@@ -31,9 +31,14 @@ bool qips_console_frontend_init(void)
     return console_frontend->init();
 }
 
-bool qips_console_frontend_domain_switch(int domain)
+bool qips_console_frontend_prep_switch(bool leaving_control)
 {
-    return console_frontend->domain_switch(domain);
+    return console_frontend->prep_switch(leaving_control);
+}
+
+bool qips_console_frontend_domain_switch(int domain, pid_t pid, int slot)
+{
+    return console_frontend->domain_switch(domain, pid, slot);
 }
 
 bool qips_console_frontend_cleanup(void)
