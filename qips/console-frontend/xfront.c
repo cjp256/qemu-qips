@@ -36,6 +36,12 @@
 static Display *xfront_dpy = NULL;
 static Window saved_window = 0;
 
+static int xfront_xlib_error_handler(Display *display, XErrorEvent *error_event)
+{
+    DPRINTF("ignoring error=%d\n", error_event->error_code);
+    return 0;
+}
+
 static void xfront_raise_window(Window win)
 {
 #if 0
@@ -131,6 +137,25 @@ static void xfront_raise_windows_by_slot(int slot)
                                xfront_raise_window);
 }
 
+static Window xfront_raise_window_under_pointer(void)
+{
+    Window win, unused1;
+    int unused2;
+    unsigned int unused3;
+
+    do {
+        XQueryPointer(xfront_dpy, DefaultRootWindow(xfront_dpy), &unused1,
+                      &win, &unused2, &unused2, &unused2, &unused2,
+                      &unused3);
+    } while (win <= 0);
+
+    DPRINTF("raising: 0x%lx\n", (long) win);
+    xfront_raise_window(win);
+
+    return win;
+}
+
+
 static void xfront_window_focus_save(void)
 {
 #if 0
@@ -182,9 +207,10 @@ static void xfront_window_focus_save(void)
 static void xfront_window_focus_restore(void)
 {
     DPRINTF("entry\n");
-
     if (saved_window <= 0) {
         DPRINTF("skipping restore for 0x%lx\n", (long) saved_window);
+        if (0) xfront_raise_window_under_pointer();
+        return;
     }
 
     xfront_raise_window(saved_window);
@@ -206,24 +232,40 @@ static bool xfront_init(void)
 
 static bool xfront_prep_switch(bool leaving_control)
 {
-    DPRINTF("entry\n");
+    void *old_handler;
+
+    DPRINTF("leaving_control=%d\n", (int)leaving_control);
+
+    XSync(xfront_dpy, False);
+    old_handler = XSetErrorHandler(xfront_xlib_error_handler);
 
     if (leaving_control) {
         xfront_window_focus_save();
     }
+
+    XSync(xfront_dpy, False);
+    XSetErrorHandler(old_handler);
 
     return true;
 }
 
 static bool xfront_switch(int domain, pid_t pid, int slot)
 {
+    void *old_handler;
+
     DPRINTF("switch to domain=%d pid=%ld slot=%d!\n", domain, (long)pid, slot);
+
+    XSync(xfront_dpy, False);
+    old_handler = XSetErrorHandler(xfront_xlib_error_handler);
 
     if (slot == 0) {
         xfront_window_focus_restore();
     } else {
         xfront_raise_windows_by_slot(slot);
     }
+
+    XSync(xfront_dpy, False);
+    XSetErrorHandler(old_handler);
 
     return true;
 }
