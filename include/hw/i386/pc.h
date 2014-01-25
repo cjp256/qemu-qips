@@ -182,6 +182,7 @@ PCIBus *i440fx_init(PCII440FXState **pi440fx_state, int *piix_devfn,
                     MemoryRegion *address_space_mem,
                     MemoryRegion *address_space_io,
                     ram_addr_t ram_size,
+                    ram_addr_t below_4g_mem_size,
                     ram_addr_t above_4g_mem_size,
                     MemoryRegion *pci_memory,
                     MemoryRegion *ram_memory);
@@ -240,6 +241,7 @@ uint16_t pvpanic_port(void);
 int e820_add_entry(uint64_t, uint64_t, uint32_t);
 
 #define PC_Q35_COMPAT_1_7 \
+        PC_COMPAT_1_7, \
         {\
             .driver   = "hpet",\
             .property = HPET_INTCAP,\
@@ -258,7 +260,15 @@ int e820_add_entry(uint64_t, uint64_t, uint32_t);
         PC_COMPAT_1_4, \
         PC_Q35_COMPAT_1_5
 
+#define PC_COMPAT_1_7 \
+        {\
+            .driver   = TYPE_USB_DEVICE,\
+            .property = "msos-desc",\
+            .value    = "no",\
+        }
+
 #define PC_COMPAT_1_6 \
+        PC_COMPAT_1_7, \
         {\
             .driver   = "e1000",\
             .property = "mitigation",\

@@ -21,6 +21,7 @@
 #include "qmp-commands.h"
 #include "qemu/sockets.h"
 #include "monitor/monitor.h"
+#include "qapi/opts-visitor.h"
 #include "ui/console.h"
 #include "block/qapi.h"
 #include "qemu-io.h"
@@ -870,7 +871,7 @@ void hmp_block_passwd(Monitor *mon, const QDict *qdict)
     const char *password = qdict_get_str(qdict, "password");
     Error *errp = NULL;
 
-    qmp_block_passwd(device, password, &errp);
+    qmp_block_passwd(true, device, false, NULL, password, &errp);
     hmp_handle_error(mon, &errp);
 }
 
@@ -892,7 +893,7 @@ void hmp_block_resize(Monitor *mon, const QDict *qdict)
     int64_t size = qdict_get_int(qdict, "size");
     Error *errp = NULL;
 
-    qmp_block_resize(device, size, &errp);
+    qmp_block_resize(true, device, false, NULL, size, &errp);
     hmp_handle_error(mon, &errp);
 }
 
@@ -971,7 +972,9 @@ void hmp_snapshot_blkdev(Monitor *mon, const QDict *qdict)
     }
 
     mode = reuse ? NEW_IMAGE_MODE_EXISTING : NEW_IMAGE_MODE_ABSOLUTE_PATHS;
-    qmp_blockdev_snapshot_sync(device, filename, !!format, format,
+    qmp_blockdev_snapshot_sync(true, device, false, NULL,
+                               filename, false, NULL,
+                               !!format, format,
                                true, mode, &errp);
     hmp_handle_error(mon, &errp);
 }
@@ -1091,11 +1094,11 @@ void hmp_eject(Monitor *mon, const QDict *qdict)
     hmp_handle_error(mon, &err);
 }
 
-static void hmp_change_read_arg(Monitor *mon, const char *password,
-                                void *opaque)
+static void hmp_change_read_arg(void *opaque, const char *password,
+                                void *readline_opaque)
 {
     qmp_change_vnc_password(password, NULL);
-    monitor_read_command(mon, 1);
+    monitor_read_command(opaque, 1);
 }
 
 void hmp_change(Monitor *mon, const QDict *qdict)
@@ -1354,6 +1357,63 @@ void hmp_netdev_del(Monitor *mon, const QDict *qdict)
     hmp_handle_error(mon, &err);
 }
 
+void hmp_object_add(Monitor *mon, const QDict *qdict)
+{
+    Error *err = NULL;
+    QemuOpts *opts;
+    char *type = NULL;
+    char *id = NULL;
+    void *dummy = NULL;
+    OptsVisitor *ov;
+    QDict *pdict;
+
+    opts = qemu_opts_from_qdict(qemu_find_opts("object"), qdict, &err);
+    if (err) {
+        goto out;
+    }
+
+    ov = opts_visitor_new(opts);
+    pdict = qdict_clone_shallow(qdict);
+
+    visit_start_struct(opts_get_visitor(ov), &dummy, NULL, NULL, 0, &err);
+    if (err) {
+        goto out_clean;
+    }
+
+    qdict_del(pdict, "qom-type");
+    visit_type_str(opts_get_visitor(ov), &type, "qom-type", &err);
+    if (err) {
+        goto out_clean;
+    }
+
+    qdict_del(pdict, "id");
+    visit_type_str(opts_get_visitor(ov), &id, "id", &err);
+    if (err) {
+        goto out_clean;
+    }
+
+    object_add(type, id, pdict, opts_get_visitor(ov), &err);
+    if (err) {
+        goto out_clean;
+    }
+    visit_end_struct(opts_get_visitor(ov), &err);
+    if (err) {
+        qmp_object_del(id, NULL);
+    }
+
+out_clean:
+    opts_visitor_cleanup(ov);
+
+    QDECREF(pdict);
+    qemu_opts_del(opts);
+    g_free(id);
+    g_free(type);
+    g_free(dummy);
+
+out:
+    hmp_handle_error(mon, &err);
+}
+
 void hmp_getfd(Monitor *mon, const QDict *qdict)
 {
     const char *fdname = qdict_get_str(qdict, "fdname");
@@ -1525,6 +1585,16 @@ void hmp_nbd_server_stop(Monitor *mon, const QDict *qdict)
     hmp_handle_error(mon, &errp);
 }
 
+void hmp_cpu_add(Monitor *mon, const QDict *qdict)
+{
+    int cpuid;
+    Error *err = NULL;
+
+    cpuid = qdict_get_int(qdict, "id");
+    qmp_cpu_add(cpuid, &err);
+    hmp_handle_error(mon, &err);
+}
+
 void hmp_chardev_add(Monitor *mon, const QDict *qdict)
 {
     const char *args = qdict_get_str(qdict, "args");
@@ -1562,5 +1632,14 @@ void hmp_qemu_io(Monitor *mon, const QDict *qdict)
         error_set(&err, QERR_DEVICE_NOT_FOUND, device);
     }
 
+    hmp_handle_error(mon, &err);
+}
+
+void hmp_object_del(Monitor *mon, const QDict *qdict)
+{
+    const char *id = qdict_get_str(qdict, "id");
+    Error *err = NULL;
+
+    qmp_object_del(id, &err);
     hmp_handle_error(mon, &err);
 }

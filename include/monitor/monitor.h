@@ -5,7 +5,7 @@
 #include "qapi/qmp/qerror.h"
 #include "qapi/qmp/qdict.h"
 #include "block/block.h"
-#include "monitor/readline.h"
+#include "qemu/readline.h"
 
 extern Monitor *cur_mon;
 extern Monitor *default_mon;
@@ -96,6 +96,9 @@ int monitor_read_password(Monitor *mon, ReadLineFunc *readline_func,
 int qmp_qom_set(Monitor *mon, const QDict *qdict, QObject **ret);
 
 int qmp_qom_get(Monitor *mon, const QDict *qdict, QObject **ret);
+int qmp_object_add(Monitor *mon, const QDict *qdict, QObject **ret);
+void object_add(const char *type, const char *id, const QDict *qdict,
+                Visitor *v, Error **errp);
 
 AddfdInfo *monitor_fdset_add_fd(int fd, bool has_fdset_id, int64_t fdset_id,
                                 bool has_opaque, const char *opaque,
