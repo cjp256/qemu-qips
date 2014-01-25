@@ -98,6 +98,15 @@ static QipsState state = {
     .focused_client = NULL,
 };
 
+void error_report(const char *fmt, ...)
+{
+    va_list arg;
+    va_start(arg, fmt);
+    vfprintf(stderr, fmt, arg);
+    va_end(arg);
+    fflush(stderr);
+}
+
 static void qips_request_kbd_reset(QipsState * s, QipsClient * client);
 
 static void switch_focused_client(QipsState * s, QipsClient * new_focus,
