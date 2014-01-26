@@ -1002,6 +1002,8 @@ static int scan_devices(void)
         free(namelist[i]);
     }
 
+    free(namelist);
+
     return ndev_added;
 }
 
