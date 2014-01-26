@@ -54,12 +54,7 @@ typedef struct {
 static Lock **locks;
 static int nscreens;
 static Bool running = True;
-
-static int xback_xlib_error_handler(Display *display, XErrorEvent *error_event)
-{
-    DPRINTF("ignoring error=%d\n", error_event->error_code);
-    return 0;
-}
+static Display *dpy;
 
 static void xback_unlockscreen(Display * dpy, Lock * lock)
 {
@@ -156,18 +151,13 @@ static Lock *xback_lockscreen(Display * dpy, int screen)
 
 static bool xback_lock(void)
 {
-    Display *dpy = XOpenDisplay(0);
-    void *old_handler;
     int screen;
     int nlocks = 0;
 
-    if (!dpy) {
-        DPRINTF("XOpenDisplay failed\n");
+    if (!(dpy = XOpenDisplay(0))) {
+        fprintf(stderr, "cannot open display");
         return false;
     }
-
-    XSync(dpy, False);
-    old_handler = XSetErrorHandler(xback_xlib_error_handler);
 
     /* Get the number of screens in display "dpy" and blank them all. */
     nscreens = ScreenCount(dpy);
@@ -178,10 +168,7 @@ static bool xback_lock(void)
             nlocks++;
         }
     }
-
     XSync(dpy, False);
-    XSetErrorHandler(old_handler);
-    XCloseDisplay(dpy);
 
     /* Did we actually manage to lock something? */
     if (nlocks == 0) {
@@ -196,34 +183,19 @@ static bool xback_lock(void)
 /* restore X to pre-locked conditions */
 static bool xback_release(void)
 {
-    Display *dpy = XOpenDisplay(0);
-    void *old_handler;
     int screen;
 
-    if (!dpy) {
-        DPRINTF("XOpenDisplay failed\n");
-        return false;
+    if (locks) {
+        /* unlock everything and quit. */
+        for (screen = 0; screen < nscreens; screen++) {
+            xback_unlockscreen(dpy, locks[screen]);
+        }
+
+        g_free(locks);
     }
 
-    if (!locks) {
-        /* nothing to do */
-        return true;
-    }
-
-    XSync(dpy, False);
-    old_handler = XSetErrorHandler(xback_xlib_error_handler);
-
-    /* unlock everything and quit. */
-    for (screen = 0; screen < nscreens; screen++) {
-        xback_unlockscreen(dpy, locks[screen]);
-    }
-
-    g_free(locks);
-    locks = NULL;
-
-    XSync(dpy, False);
-    XSetErrorHandler(old_handler);
     XCloseDisplay(dpy);
+    dpy = NULL;
 
     return true;
 }
