@@ -53,7 +53,7 @@ void qips_input_backend_rel_mouse_event(int64_t timestamp_usec,
                                         int dx, int dy, int dz,
                                         QipsMouseButtons * buttons);
 
-void qips_send_focused_client_message(char *msg, size_t sz, bool sync);
+void qips_send_focused_client_message(char *msg, size_t sz);
 
 void qips_domain_switch_right(void);
 

@@ -36,6 +36,7 @@
 #include <pthread.h>
 #include <sys/inotify.h>
 #include <getopt.h>
+#include <time.h>
 
 #include "qemu-common.h"
 #include "input-backend/input-backend.h"
@@ -63,7 +64,23 @@ const char * qips_sockets_path = QIPS_SOCKETS_PATH;
 const char * qips_sockets_fmt = QIPS_SOCKETS_FMT;
 const char * qips_sockets_fmt_base = QIPS_SOCKETS_FMT_BASE;
 
+typedef struct QmpMessage {
+    int64_t msg_id;
+    char *msg;
+    time_t t_queued;
+    time_t t_sent;
+    time_t t_response;
+    time_t t_expire;
+    QDict *response;
+    pthread_cond_t response_cond;
+    pthread_mutex_t response_mutex;
+    QTAILQ_ENTRY(QmpMessage) next;
+} QmpMessage;
+
+typedef QTAILQ_HEAD(QmpMessageQueue, QmpMessage) QmpMessageQueue;
+
 typedef struct QipsClient {
+    bool active;                        /* threads break & join when 0 */
     char socket_path[PATH_MAX];
     pid_t process_id;
     int socket_fd;
@@ -73,9 +90,14 @@ typedef struct QipsClient {
     int msg_recv_count;
     int msg_sent_count;
     bool mouse_mode_absolute;
-     QTAILQ_ENTRY(QipsClient) next;
+    pthread_cond_t outgoing_messages_cond;
+    pthread_mutex_t outgoing_messages_mutex;
+    QmpMessageQueue outgoing_messages;
+
     pthread_t socket_listener;
+    pthread_t regulator;
     JSONMessageParser inbound_parser;
+    QTAILQ_ENTRY(QipsClient) next;
 } QipsClient;
 
 typedef QTAILQ_HEAD(QipsClientList, QipsClient) QipsClientList;
@@ -189,21 +211,6 @@ void qips_domain_switch_left(void)
     switch_focused_client(s, new_focus, false);
 }
 
-static void client_list_mutex_init(QipsState * s)
-{
-    qemu_mutex_init(&s->clients_mutex);
-}
-
-static void client_list_mutex_lock(QipsState * s)
-{
-    qemu_mutex_lock(&s->clients_mutex);
-}
-
-static void client_list_mutex_unlock(QipsState * s)
-{
-    qemu_mutex_unlock(&s->clients_mutex);
-}
-
 static void client_list_add(QipsState * s, QipsClient * client)
 {
     QipsClient *iter;
@@ -212,11 +219,11 @@ static void client_list_add(QipsState * s, QipsClient * client)
 
     /* we want to add the client in order of slot id to simply switches */
 
-    client_list_mutex_lock(s);
+    qemu_mutex_lock(&s->clients_mutex);
     QTAILQ_FOREACH(iter, &s->clients, next) {
         if (iter->slot_id > client->slot_id) {
             QTAILQ_INSERT_BEFORE(iter, client, next);
-            client_list_mutex_unlock(s);
+            qemu_mutex_unlock(&s->clients_mutex);
             return;
         }
 
@@ -225,14 +232,14 @@ static void client_list_add(QipsState * s, QipsClient * client)
         if (iter->slot_id == client->slot_id) {
             DPRINTF("WARNING: re-adding slot id=%d...?\n", client->slot_id);
             QTAILQ_INSERT_AFTER(&s->clients, iter, client, next);
-            client_list_mutex_unlock(s);
+            qemu_mutex_unlock(&s->clients_mutex);
             return;
         }
     }
 
     /* no larger slot id was found - add to tail */
     QTAILQ_INSERT_TAIL(&s->clients, client, next);
-    client_list_mutex_unlock(s);
+    qemu_mutex_unlock(&s->clients_mutex);;
 }
 
 static void client_list_remove(QipsState * s, QipsClient * client)
@@ -248,9 +255,9 @@ static void client_list_remove(QipsState * s, QipsClient * client)
         switch_focused_client(s, QTAILQ_FIRST(&s->clients), true);
     }
 
-    client_list_mutex_lock(s);
+    qemu_mutex_lock(&s->clients_mutex);
     QTAILQ_REMOVE(&s->clients, client, next);
-    client_list_mutex_unlock(s);
+    qemu_mutex_unlock(&s->clients_mutex);
 }
 
 static void qips_cleanup(QipsState * s)
@@ -285,9 +292,11 @@ static void qips_cleanup(QipsState * s)
 }
 
 static void qips_send_message(QipsState * s, QipsClient * client, char *msg,
-                              size_t sz, bool sync)
+                              size_t sz)
 {
-    int sent_count, recv_count;
+    QmpMessage *message;
+    size_t msg_len = strlen(msg) + 256; /* TODO: can do better */
+    static int64_t msg_id = 0;
 
     if (!client) {
         DPRINTF(" noone is listening :(\n");
@@ -299,8 +308,18 @@ static void qips_send_message(QipsState * s, QipsClient * client, char *msg,
         return;
     }
 
-    DPRINTF("sending msg to client slot=%d domain=%d (fd=%d)\n",
-            client->slot_id, client->domain_id, client->socket_fd);
+    message = g_malloc0(sizeof(*message));
+    pthread_mutex_init(&message->response_mutex, NULL);
+    pthread_cond_init(&message->response_cond, NULL);
+    message->t_queued = time(NULL);
+    message->msg = g_malloc0(msg_len);
+    message->msg_id = ++msg_id;
+
+    snprintf(message->msg, msg_len, "{ \"id\": %" PRId64 ", %s }\r\n",
+            msg_id, msg);
+
+    DPRINTF("queuing msg id=%" PRId64 " to client slot=%d domain=%d (fd=%d)\n",
+            msg_id, client->slot_id, client->domain_id, client->socket_fd);
 
     DPRINTF("msg = %s\n", msg);
 
@@ -308,89 +327,65 @@ static void qips_send_message(QipsState * s, QipsClient * client, char *msg,
         DPRINTF("WARNING msg sz %zd != strlen(msg) %zd \n", sz, strlen(msg));
     }
 
-    if (client->socket_fd <= 0) {
-        DPRINTF("warning invalid descriptor - ignoring packet!\n");
-        return;
-    }
-
-    recv_count = client->msg_recv_count;
-
-    if (send(client->socket_fd, msg, strlen(msg), 0) < 0) {
-        DPRINTF
-            ("send error - closing client domain=%d (fd=%d)\n",
-             client->domain_id, client->socket_fd);
-        client->socket_fd = -1;
-        client_list_remove(s, client);
-        return;
-    }
-
-    sent_count = ++client->msg_sent_count;
-
-    DPRINTF("recv=%d sent=%d", recv_count, sent_count);
-
-    /* XXX - perhaps use id? */
-    if (sync) {
-        DPRINTF("attempting to sync!\n");
-        while (client->msg_recv_count == recv_count) {
-            usleep(1);
-        }
-        DPRINTF("synced!\n");
-    }
+    pthread_mutex_lock(&client->outgoing_messages_mutex);
+    QTAILQ_INSERT_TAIL(&client->outgoing_messages, message, next);
+    pthread_mutex_unlock(&client->outgoing_messages_mutex);
+    pthread_cond_signal(&client->outgoing_messages_cond);
 }
 
 static void qips_send_hello(QipsState * s, QipsClient * client)
 {
-    char hello[] = "{ \"execute\": \"qmp_capabilities\" }";
+    char hello[] = " \"execute\": \"qmp_capabilities\" ";
 
     DPRINTF("sending hello to client slot=%d domain=%d (fd=%d)\n",
             client->slot_id, client->domain_id, client->socket_fd);
 
-    qips_send_message(s, client, hello, strlen(hello), false);
+    qips_send_message(s, client, hello, strlen(hello));
 }
 
 static void qips_send_xen_query(QipsState * s, QipsClient * client)
 {
-    char query[] = "{ \"execute\": \"query-xen-status\" }";
+    char query[] = " \"execute\": \"query-xen-status\" ";
 
     DPRINTF("sending xen query to client slot=%d domain=%d (fd=%d)\n",
             client->slot_id, client->domain_id, client->socket_fd);
 
-    qips_send_message(s, client, query, strlen(query), false);
+    qips_send_message(s, client, query, strlen(query));
 }
 
 static void qips_send_process_info_query(QipsState * s, QipsClient * client)
 {
-    char query[] = "{ \"execute\": \"query-process-info\" }";
+    char query[] = " \"execute\": \"query-process-info\" ";
 
     DPRINTF("sending process info query to client slot=%d domain=%d (fd=%d)\n",
             client->slot_id, client->domain_id, client->socket_fd);
 
-    qips_send_message(s, client, query, strlen(query), false);
+    qips_send_message(s, client, query, strlen(query));
 }
 
 static void qips_request_kbd_leds(QipsState * s, QipsClient * client)
 {
-    char query[] = "{ \"execute\": \"query-kbd-leds\" }\r\n";
+    char query[] = " \"execute\": \"query-kbd-leds\" ";
 
     DPRINTF("sending kbd leds query to client slot=%d domain=%d (fd=%d)\n",
             client->slot_id, client->domain_id, client->socket_fd);
 
-    qips_send_message(s, client, query, strlen(query), false);
+    qips_send_message(s, client, query, strlen(query));
 }
 
 static void qips_request_kbd_reset(QipsState * s, QipsClient * client)
 {
-    char query[] = "{ \"execute\": \"send-kbd-reset\" }\r\n";
+    char query[] = " \"execute\": \"send-kbd-reset\" ";
 
     DPRINTF("sending kbd reset to client slot=%d domain=%d (fd=%d)\n",
             client->slot_id, client->domain_id, client->socket_fd);
 
-    qips_send_message(s, client, query, strlen(query), false);
+    qips_send_message(s, client, query, strlen(query));
 }
 
-void qips_send_focused_client_message(char *msg, size_t sz, bool sync)
+void qips_send_focused_client_message(char *msg, size_t sz)
 {
-    qips_send_message(&state, state.focused_client, msg, sz, sync);
+    qips_send_message(&state, state.focused_client, msg, sz);
 }
 
 static void terminate(int signum)
@@ -439,13 +434,77 @@ static int is_domain_socket(const struct dirent *dir)
                    strlen(qips_sockets_fmt_base)) == 0;
 }
 
-static void process_json_message(JSONMessageParser * parser, QList * tokens);
+static void process_return_message(QipsClient * client, QDict * dict);
+
+/* this guy regulates (serializes) all sent messages to make QMP happy */
+static void * client_regulator(void *c)
+{
+    QipsClient *client = (QipsClient *) c;
+
+    while (client->active) {
+        QmpMessage *next_message;
+
+        pthread_mutex_lock(&client->outgoing_messages_mutex);
+        while ((next_message = QTAILQ_FIRST(&client->outgoing_messages)) == NULL) {
+            pthread_cond_wait(&client->outgoing_messages_cond,
+                            &client->outgoing_messages_mutex);
+        }
+        pthread_mutex_unlock(&client->outgoing_messages_mutex);
+
+        if (!next_message) {
+            DPRINTF("next_message is NULL??\n");
+            exit(1);
+        }
+
+        DPRINTF("sending msg_id=%" PRId64 "\n", next_message->msg_id);
+        if (send(client->socket_fd, next_message->msg,
+                 strlen(next_message->msg), 0) < 0) {
+            DPRINTF("send error - closing client domain=%d (fd=%d)\n",
+                    client->domain_id, client->socket_fd);
+            client->active = false;
+            return NULL;
+        }
+
+        DPRINTF("awaiting response msg_id=%" PRId64 "\n", next_message->msg_id);
+        pthread_mutex_lock(&next_message->response_mutex);
+        while (!next_message->response) {
+            pthread_cond_wait(&next_message->response_cond,
+                              &next_message->response_mutex);
+        }
+        pthread_mutex_unlock(&next_message->response_mutex);
+        DPRINTF("got response msg_id=%" PRId64 "\n", next_message->msg_id);
+
+        client->msg_sent_count++;
+
+        /* drop it from the queue */
+        pthread_mutex_lock(&client->outgoing_messages_mutex);
+        QTAILQ_REMOVE(&client->outgoing_messages, next_message, next);
+        pthread_mutex_unlock(&client->outgoing_messages_mutex);
+
+        /* TODO: callback handler */
+        process_return_message(client, next_message->response);
+
+        /* cleanup message */
+        pthread_cond_destroy(&next_message->response_cond);
+        pthread_mutex_destroy(&next_message->response_mutex);
+        if (next_message->response) {
+            g_free(next_message->response);
+        }
+        g_free(next_message->msg);
+        g_free(next_message);
+    }
+
+    return NULL;
+}
+
 static void client_consumer(QipsState * s, QipsClient * client)
 {
     char buf[4096];
 
-    while (1) {
-        ssize_t sz = read(client->socket_fd, buf, sizeof(buf));
+    while (client->active) {
+        ssize_t sz;
+
+        sz = read(client->socket_fd, buf, sizeof(buf));
 
         if (sz < 0) {
             DPRINTF("failed to read: %s!\n", strerror(errno));
@@ -461,10 +520,13 @@ static void client_consumer(QipsState * s, QipsClient * client)
             DPRINTF("client disconnected: %s\n", strerror(errno));
             break;
         }
+
+        DPRINTF("received msg: recv=%d sent=%d", client->msg_recv_count, client->msg_sent_count);
     }
 
     /* client is done for - cleanup */
     DPRINTF("closing client slot=%d\n", client->slot_id);
+    client->active = 0;
     close(client->socket_fd);
     client->socket_fd = -1;
     client_list_remove(s, client);
@@ -721,6 +783,7 @@ static void process_json_message(JSONMessageParser * parser, QList * tokens)
     QipsClient *client = container_of(parser, QipsClient, inbound_parser);
     QObject *obj = NULL;
     QDict *qdict = NULL;
+    int64_t msg_id = -1;
 
     Error *err = NULL;
 
@@ -741,6 +804,12 @@ static void process_json_message(JSONMessageParser * parser, QList * tokens)
         return;
     }
 
+    /* check for id */
+    if (qdict_haskey(qdict, "id")) {
+        DPRINTF("has key id - qdict = %p\n", qdict);
+        msg_id = qdict_get_try_int(qdict, "id", -1);
+    }
+
     /* check if return message */
     if (qdict_haskey(qdict, "return")) {
         QObject *obj = qdict_get(qdict, "return");
@@ -748,7 +817,23 @@ static void process_json_message(JSONMessageParser * parser, QList * tokens)
 
         if (obj) {
             if (qobject_type(obj) == QTYPE_QDICT) {
-                process_return_message(client, qobject_to_qdict(obj));
+                /* any return message belongs to currently pending message */
+                QmpMessage *pending_message;
+
+                pending_message = QTAILQ_FIRST(&client->outgoing_messages);
+
+                if (!pending_message) {
+                    DPRINTF("error: no pending message??\n");
+                    exit(1);
+                }
+
+                DPRINTF("handling pending response msg_id=%" PRId64 "\n",
+                        msg_id);
+
+                pthread_mutex_lock(&pending_message->response_mutex);
+                pending_message->response = qobject_to_qdict(obj);
+                pthread_mutex_unlock(&pending_message->response_mutex);
+                pthread_cond_signal(&pending_message->response_cond);
                 return;
             } else {
                 DPRINTF("return type mismatch - type=%d\n", qobject_type(obj));
@@ -794,13 +879,18 @@ static void *client_add_thread(void *p)
 
     if (slot_id <= 0) {
         DPRINTF("invalid client with path: %s\n", path);
-        free(path);
+        g_free(path);
         return NULL;
     }
 
     /* register new client */
     new_client = g_malloc0(sizeof(QipsClient));
 
+    QTAILQ_INIT(&new_client->outgoing_messages);
+    pthread_mutex_init(&new_client->outgoing_messages_mutex, NULL);
+    pthread_cond_init(&new_client->outgoing_messages_cond, NULL);
+
+    new_client->active = true;
     new_client->slot_id = slot_id;
     pstrcpy(new_client->socket_path, sizeof(new_client->socket_path), path);
 
@@ -829,8 +919,8 @@ static void *client_add_thread(void *p)
 
     if (!connected) {
         close(new_client->socket_fd);
-        free(new_client);
-        free(path);
+        g_free(new_client);
+        g_free(path);
         return NULL;
     }
 
@@ -838,6 +928,8 @@ static void *client_add_thread(void *p)
             new_client->socket_path, new_client->slot_id);
 
     new_client->socket_listener = pthread_self();
+
+    pthread_create(&new_client->regulator, NULL, client_regulator, new_client);
 
     json_message_parser_init(&new_client->inbound_parser, process_json_message);
 
@@ -962,6 +1054,8 @@ static void client_scan(QipsState * s)
 
         free(namelist[i]);
     }
+
+    free(namelist);
 }
 
 static void usage(const char *prog)
@@ -1146,7 +1240,7 @@ int main(int argc, char *argv[])
 
     setup_signals(allow_sigint);
 
-    client_list_mutex_init(&state);
+    qemu_mutex_init(&state.clients_mutex);
 
     /* add dom0 to client list */
     dom0 = g_malloc0(sizeof(QipsClient));

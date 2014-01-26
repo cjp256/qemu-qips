@@ -93,11 +93,11 @@ void qips_input_backend_key_event(int64_t timestamp_usec,
     char buf[1024];
 
     snprintf(buf, sizeof(buf),
-             "{ \"execute\": \"send-keycode\","
-             " \"arguments\": { \"keycode\": %d, \"released\": %s } }\r\n",
+             " \"execute\": \"send-keycode\","
+             " \"arguments\": { \"keycode\": %d, \"released\": %s } ",
              scancode, released ? "true" : "false");
 
-    qips_send_focused_client_message(buf, strlen(buf), false);
+    qips_send_focused_client_message(buf, strlen(buf));
 
     qips_input_backend_key_map(scancode, released);
 }
@@ -109,16 +109,16 @@ void qips_input_backend_abs_mouse_event(int64_t timestamp_usec,
     char buf[1024];
 
     snprintf(buf, sizeof(buf),
-             "{ \"execute\": \"send-mouse-abs\","
+             " \"execute\": \"send-mouse-abs\","
              " \"arguments\": { \"x\": %d, \"y\": %d, \"z\": %d,"
              " \"buttons\": { \"left\": %s, \"middle\": %s,"
-             " \"right\": %s } } }\r\n",
+             " \"right\": %s } } ",
              x, y, z,
              buttons->left ? "true" : "false",
              buttons->middle ? "true" : "false",
              buttons->right ? "true" : "false");
 
-    qips_send_focused_client_message(buf, strlen(buf), false);
+    qips_send_focused_client_message(buf, strlen(buf));
 }
 
 void qips_input_backend_rel_mouse_event(int64_t timestamp_usec,
@@ -128,14 +128,14 @@ void qips_input_backend_rel_mouse_event(int64_t timestamp_usec,
     char buf[1024];
 
     snprintf(buf, sizeof(buf),
-             "{ \"execute\": \"send-mouse-rel\","
+             " \"execute\": \"send-mouse-rel\","
              " \"arguments\": { \"dx\": %d, \"dy\": %d, \"dz\": %d,"
              " \"buttons\": { \"left\": %s, \"middle\": %s,"
-             " \"right\": %s } } }\r\n",
+             " \"right\": %s } } ",
              dx, dy, dz,
              buttons->left ? "true" : "false",
              buttons->middle ? "true" : "false",
              buttons->right ? "true" : "false");
 
-    qips_send_focused_client_message(buf, strlen(buf), false);
+    qips_send_focused_client_message(buf, strlen(buf));
 }

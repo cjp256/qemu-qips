@@ -17,6 +17,7 @@
 #ifndef QIPS_H
 #define QIPS_H
 
+#include <time.h>
 #include <syslog.h>
 #include "qapi/qmp/types.h"
 
@@ -26,15 +27,21 @@ extern int qips_debug_mode;
 //#define DO_LOG_STDERR
 
 #ifdef DO_LOG_SYSLOG
-#define DPRINTF_SYSLOG(msg, ...) do syslog(LOG_NOTICE, "%s():L%d: " msg, \
-            __FUNCTION__, __LINE__, ## __VA_ARGS__); while(0)
+#define DPRINTF_SYSLOG(msg, ...) do { \
+            char ts[256]; time_t now = time(NULL); \
+            strftime(ts, 20, "%Y-%m-%d %H:%M:%S", localtime(&now)); \
+            syslog(LOG_NOTICE, "[%s] %s():L%d: " msg, \
+            ts, __FUNCTION__, __LINE__, ## __VA_ARGS__); } while(0)
 #else
 #define DPRINTF_SYSLOG(msg, ...) do { } while(0)
 #endif
 
 #ifdef DO_LOG_STDERR
-#define DPRINTF_STDERR(msg, ...) do fprintf(stderr, "%s():L%d: " msg, \
-            __FUNCTION__, __LINE__, ## __VA_ARGS__); while(0)
+#define DPRINTF_STDERR(msg, ...) do { \
+            char ts[256]; time_t now = time(NULL); \
+            strftime(ts, 20, "%Y-%m-%d %H:%M:%S", localtime(&now)); \
+            fprintf(stderr, "[%s] %s():L%d: " msg, \
+            ts, __FUNCTION__, __LINE__, ## __VA_ARGS__); } while(0)
 #else
 #define DPRINTF_STDERR(msg, ...) do { } while(0)
 #endif
