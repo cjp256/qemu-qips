@@ -26,19 +26,23 @@
 #include "qmp-commands.h"
 #include "qemu/config-file.h"
 
-//#define DO_LOG_SYSLOG
+#define DO_LOG_SYSLOG
 //#define DO_LOG_STDERR
 
 #ifdef DO_LOG_SYSLOG
-#define DPRINTF_SYSLOG(msg, ...) do syslog(LOG_NOTICE, "%s():L%d: " msg, \
-            __FUNCTION__, __LINE__, ## __VA_ARGS__); while(0)
+#define DPRINTF_SYSLOG(msg, ...) do { char ts[256]; time_t now = time(NULL); \
+            strftime(ts, 20, "%Y-%m-%d %H:%M:%S", localtime(&now)); \
+            syslog(LOG_NOTICE, "[%s] %s():L%d: " msg, \
+            ts, __FUNCTION__, __LINE__, ## __VA_ARGS__); } while(0)
 #else
 #define DPRINTF_SYSLOG(msg, ...) do { } while(0)
 #endif
 
 #ifdef DO_LOG_STDERR
-#define DPRINTF_STDERR(msg, ...) do fprintf(stderr, "%s():L%d: " msg, \
-            __FUNCTION__, __LINE__, ## __VA_ARGS__); while(0)
+#define DPRINTF_STDERR(msg, ...) do { char ts[256]; time_t now = time(NULL); \
+            strftime(ts, 20, "%Y-%m-%d %H:%M:%S", localtime(&now)); \
+            fprintf(stderr, "[%s] %s():L%d: " msg, \
+            ts, __FUNCTION__, __LINE__, ## __VA_ARGS__); } while(0)
 #else
 #define DPRINTF_STDERR(msg, ...) do { } while(0)
 #endif
@@ -112,6 +116,8 @@ static void qip_qmp_mouse_mode_event(QipState * qss, int abs)
 {
     QObject *mouse_status;
 
+    DPRINTF("entry\n");
+
     if (!qss) {
         return;
     }
@@ -126,6 +132,8 @@ static void mouse_mode_notifier(Notifier * notifier, void *opaque)
 {
     QipState *qss;
 
+    DPRINTF("entry\n");
+
     qss = container_of(opaque, QipState, mouse_mode_notifier);
 
     DPRINTF("mouse is_absolute: %d\n", (int)kbd_mouse_is_absolute());
@@ -137,6 +145,8 @@ static void mouse_mode_notifier(Notifier * notifier, void *opaque)
 static void qip_qmp_kbd_leds_event(QipState * qss)
 {
     QObject *kbd_leds;
+
+    DPRINTF("entry\n");
 
     if (!qss) {
         return;
@@ -187,14 +197,16 @@ void qmp_send_keycode(int64_t keycode, bool released, Error ** errp)
 {
     QipState *qss = &qip_state;
 
+    DPRINTF("keycode=%d released=%d\n", (int)keycode, (int)released);
+
     if (keycode < 0 || keycode >= sizeof(qss->key_down_map)) {
-        DPRINTF("ignoring invalid keycode=0x%" PRId64 "x", keycode);
+        DPRINTF("ignoring invalid keycode=0x%" PRIx64 "\n", keycode);
         return;
     }
 
     if (released) {
         if (qss->key_down_map[keycode] == 0) {
-            DPRINTF("ignoring invalid keyup event for keycode=0x%" PRId64 "x",
+            DPRINTF("ignoring invalid keyup event for keycode=0x%" PRIx64 "\n",
                     keycode);
         } else {
             qss->key_down_map[keycode] = 0;
@@ -306,6 +318,8 @@ void qmp_send_kbd_reset(Error ** errp)
     QipState *qss = &qip_state;
     int i;
 
+    DPRINTF("keyboard reset\n");
+
     for (i = 0; i < sizeof(qss->key_down_map); i++) {
         if (qss->key_down_map[i]) {
             DPRINTF("reset key=%d (0x%x) up\n", i, i);
@@ -345,6 +359,8 @@ MouseStatus *qmp_query_mouse_status(Error ** errp)
     QipState *qss = &qip_state;
     MouseStatus *mouse_status;
 
+    DPRINTF("entry\n");
+
     mouse_status = g_malloc0(sizeof(*mouse_status));
 
     mouse_status->absolute = kbd_mouse_is_absolute();
@@ -359,6 +375,8 @@ XenStatus *qmp_query_xen_status(Error ** errp)
 {
     //QipState *qss = &qip_state;
     XenStatus *xen_status;
+
+    DPRINTF("entry\n");
 
     xen_status = g_malloc0(sizeof(*xen_status));
 
@@ -378,6 +396,8 @@ ProcessInfo *qmp_query_process_info(Error ** errp)
 {
     ProcessInfo *p_info;
 
+    DPRINTF("entry\n");
+
     p_info = g_malloc0(sizeof(*p_info));
 
     p_info->pid = (int64_t) getpid();
@@ -390,6 +410,8 @@ KbdLedStatus *qmp_query_kbd_leds(Error ** errp)
 {
     QipState *qss = &qip_state;
     KbdLedStatus *led_status;
+
+    DPRINTF("entry\n");
 
     led_status = g_malloc0(sizeof(*led_status));
 
